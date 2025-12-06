@@ -1,0 +1,1 @@
+D:\IT\ITMO\algorithms_c++\lab2\lab2_tests\x64\Debug\lab2_tests.vcxproj.CopyComplete
