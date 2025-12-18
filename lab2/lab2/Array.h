@@ -4,7 +4,6 @@
 #include <utility>
 #include <type_traits>
 #include <cassert>
-#include <memory>
 #include <new>
 
 template<typename T>
@@ -128,7 +127,7 @@ public:
 
     // --- Конструкторы/Деструктор ---
     Array();
-    explicit Array(int capacity);
+    explicit Array(const int capacity);
     Array(const Array& other);
     Array(Array&& other) noexcept;
 
@@ -138,19 +137,19 @@ public:
     Array& operator=(const Array& other);
     Array& operator=(Array&& other) noexcept;
 
-    const T& operator[](int index) const;
-    T& operator[](int index);
+    const T& operator[](const int index) const;
+    T& operator[](const int index);
 
     // --- Добавление элементов ---
     int insert(const T& value) { return insert(size_, value); };
-    int insert(int index, const T& value);
+    int insert(const int index, const T& value);
 
     // --- Удаление элементов ---
-    void remove(int index);
+    void remove(const int index);
 
     int size() const { return size_; }
     int getCapacity() const { return capacity_; }
-    bool isEmpty() const { return size_ == 0 && data_ == nullptr; }
+    bool isEmpty() const { return size_ == 0; }
 
     // --- Получение итераторов ---
     Iterator iterator() { return Iterator(this, 0); }
@@ -175,6 +174,16 @@ private:
 
     void reallocate();
     void clearAndFree();
+
+    void construct_at(const int index, const T& value) { ::new (static_cast<void*>(data_ + index)) T(value); }
+    void construct_at(const int index, T&& value) { ::new (static_cast<void*>(data_ + index)) T(std::move(value)); }
+    void construct_at(T* otherData, const int index, const T& value) { ::new (static_cast<void*>(otherData + index)) T(value); }
+    void construct_at(T* otherData, const int index, T&& value) { ::new (static_cast<void*>(otherData + index)) T(std::move(value)); }
+    void destroy_at(const int index) { data_[index].~T(); }
+
+    void swap(Array& other) noexcept;
+    void moveElementToNewPosition(const int targetIndex, const int sourceIndex);
+    void moveElementToOtherData(T* targetData, const int index);
 };
 
 // ==================== Конструкторы ====================
@@ -186,7 +195,7 @@ Array<T>::Array() : capacity_(DEFAULT_CAPACITY), size_(0)
 }
 
 template<typename T>
-Array<T>::Array(int capacity) : size_(0)
+Array<T>::Array(const int capacity) : size_(0)
 {
     capacity_ = (capacity > 0) ? capacity : DEFAULT_CAPACITY;
     data_ = static_cast<T*>(malloc(sizeof(T) * capacity_));
@@ -198,7 +207,7 @@ Array<T>::Array(const Array& other) : size_(other.size_), capacity_(other.capaci
     data_ = static_cast<T*>(malloc(sizeof(T) * capacity_));
     for (int i = 0; i < size_; i++)
     {
-        std::construct_at<T>(&(data_[i]), other.data_[i]);
+        construct_at(i, other.data_[i]);
     }
 }
 
@@ -215,47 +224,27 @@ Array<T>::Array(Array&& other) noexcept : data_(other.data_), size_(other.size_)
 template<typename T>
 Array<T>& Array<T>::operator=(const Array& other)
 {
-    if (this != &other)
-    {
-        clearAndFree();
-
-        size_ = other.size_;
-        capacity_ = other.capacity_;
-        data_ = static_cast<T*>(malloc(sizeof(T) * capacity_));
-        for (int i = 0; i < size_; i++) {
-            std::construct_at(&data_[i], other.data_[i]);
-        }
-    }
+    Array temp(other);
+    this->swap(temp);
     return *this;
 }
 
 template<typename T>
 Array<T>& Array<T>::operator=(Array&& other) noexcept
 {
-    if (this != &other) 
-    {
-        clearAndFree();
-
-        data_ = other.data_;
-        size_ = other.size_;
-        capacity_ = other.capacity_;
-
-        other.data_ = nullptr;
-        other.size_ = 0;
-        other.capacity_ = 0;
-    }
+    this->swap(other);
     return *this;
 }
 
 template<typename T>
-const T& Array<T>::operator[](int index) const
+const T& Array<T>::operator[](const int index) const
 {
     assert(index >= 0 && index < size_);
     return data_[index];
 }
 
 template<typename T>
-T& Array<T>::operator[](int index)
+T& Array<T>::operator[](const int index)
 {
     assert(index >= 0 && index < size_);
     return data_[index];
@@ -264,7 +253,7 @@ T& Array<T>::operator[](int index)
 // ==================== Публичные методы ====================
 
 template<typename T>
-int Array<T>::insert(int index, const T& value)
+int Array<T>::insert(const int index, const T& value)
 {
     assert(index >= 0 && index <= size_);
 
@@ -275,40 +264,24 @@ int Array<T>::insert(int index, const T& value)
 
     for (int i = size_; i > index; i--) 
     {
-        if constexpr (std::is_move_constructible_v<T>) 
-        {
-            std::construct_at(&data_[i], std::move(data_[i - 1]));
-        }
-        else 
-        {
-            std::construct_at(&data_[i], data_[i - 1]);
-        }
-        std::destroy_at(&data_[i - 1]);
+        moveElementToNewPosition(i, i - 1);
     }
 
-    std::construct_at(&data_[index], value);
+    construct_at(index, value);
     size_++;
     return index;
 }
 
 template<typename T>
-void Array<T>::remove(int index)
+void Array<T>::remove(const int index)
 {
     assert(index >= 0 && index < size_);
 
-    std::destroy_at(&data_[index]);
+    destroy_at(index);
 
     for (int i = index; i < size_ - 1; i++) 
     {
-        if constexpr (std::is_move_constructible_v<T>) 
-        {
-            std::construct_at(&data_[i], std::move(data_[i + 1]));
-        }
-        else 
-        {
-            std::construct_at(&data_[i], data_[i + 1]);
-        }
-        std::destroy_at(&data_[i + 1]);
+        moveElementToNewPosition(i, i + 1);
     }
     size_--;
 }
@@ -318,31 +291,23 @@ void Array<T>::remove(int index)
 template<typename T>
 void Array<T>::reallocate()
 {
-    int new_capacity = (capacity_ == 0) ? DEFAULT_CAPACITY : capacity_ * GROWTH_FACTOR;
+    int newCapacity = (capacity_ == 0) ? DEFAULT_CAPACITY : capacity_ * GROWTH_FACTOR;
 
-    void* p = malloc(sizeof(T) * new_capacity);
+    void* p = malloc(sizeof(T) * newCapacity);
     if (!p) 
     {
         throw std::bad_alloc();
     }
-    T* new_data = static_cast<T*>(p);
+    T* newData = static_cast<T*>(p);
 
     for (int i = 0; i < size_; i++)
     {
-        if constexpr (std::is_move_constructible_v<T>)
-        {
-            std::construct_at(&new_data[i], std::move(data_[i]));
-        }
-        else
-        {
-            std::construct_at(&new_data[i], data_[i]);
-        }
-        std::destroy_at(&data_[i]);
+        moveElementToOtherData(newData, i);
     }
 
     free(data_);
-    data_ = new_data;
-    capacity_ = new_capacity;
+    data_ = newData;
+    capacity_ = newCapacity;
 }
 
 template<typename T>
@@ -350,7 +315,43 @@ void Array<T>::clearAndFree()
 {
     for (int i = 0; i < size_; i++)
     {
-        std::destroy_at(&data_[i]);
+        destroy_at(i);
     }
     free(data_);
+}
+
+template<typename T>
+void Array<T>::swap(Array& other) noexcept
+{
+    std::swap(this->data_, other.data_);
+    std::swap(this->size_, other.size_);
+    std::swap(this->capacity_, other.capacity_);
+}
+
+template<typename T>
+void Array<T>::moveElementToNewPosition(const int targetIndex, const int sourceIndex) 
+{
+    if constexpr (std::is_move_constructible_v<T>)
+    {
+        construct_at(targetIndex, std::move(data_[sourceIndex]));
+    }
+    else
+    {
+        construct_at(targetIndex, data_[sourceIndex]);
+    }
+    destroy_at(sourceIndex);
+}
+
+template<typename T>
+void Array<T>::moveElementToOtherData(T* targetData, const int index)
+{
+    if constexpr (std::is_move_constructible_v<T>)
+    {
+        construct_at(targetData, index, std::move(data_[index]));
+    }
+    else
+    {
+        construct_at(targetData, index, data_[index]);
+    }
+    destroy_at(index);
 }

@@ -22,5 +22,7 @@
     <TestDuration Test="ArrayTest.RangeFor" Duration="1" />
     <TestDuration Test="InsertTest.InsertString" Duration="1" />
     <TestDuration Test="InsertTest.InsertStringMoreThanMaxCapacity" Duration="1" />
+    <TestDuration Test="ArrayTest.InsertString" Duration="1" />
+    <TestDuration Test="ArrayTest.InsertStringMoreThanMaxCapacity" Duration="1" />
   </TestDurations>
 </GtaTestDurations>
