@@ -128,10 +128,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="sort.h" />
-    <ClInclude Include="testInsertionThreshold.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="testInsertionThreshold.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
